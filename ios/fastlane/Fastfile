@@ -1,0 +1,91 @@
+import '../../fastlane/Fastfile'
+
+default_platform(:ios)
+
+PROJECT = "EasUpdatesExampleBare"
+
+XCODE_PROJECT = "#{PROJECT}.xcodeproj"
+XCODE_WORKSPACE = "#{PROJECT}.xcworkspace"
+
+XCODE_SCHEME = PROJECT
+XCODE_SCHEME_DEV = "EasUpdatesExampleBareDev"
+XCODE_SCHEME_QA = "EasUpdatesExampleBareQA"
+XCODE_SCHEME_RELEASE = "EasUpdatesExampleBareRelease"
+
+BUILD_DIR = "build"
+
+
+platform :ios do
+
+  before_all do |lane, options|
+    setup_ci
+
+    api_key = app_store_connect_api_key(
+      is_key_content_base64: true
+    )
+
+    match(
+      type: "appstore", 
+      api_key: api_key,
+      readonly: is_ci,
+    )
+
+  end
+
+
+  lane :compile do |options|
+    # compile the code
+    track = options[:track]
+
+    if (track.nil?) then
+      UI.user_error!('The track is required. Either dev, qa or release')
+    end
+
+
+    scheme_to_use = case track
+    when :dev
+      XCODE_SCHEME_DEV
+    when :qa
+      XCODE_SCHEME_QA
+    when :store
+      XCODE_SCHEME_RELEASE
+    else
+      XCODE_SCHEME
+    end
+
+    build_ios_app(
+      scheme: scheme_to_use,
+      workspace: XCODE_WORKSPACE,
+      export_method: "app-store",
+      silent: true,
+      clean: true,
+      output_directory: "#{BUILD_DIR}/#{track}"
+    )
+
+  end
+
+
+
+  lane :dev do |options|
+    track = :dev
+    compile(track: track)
+  end
+  
+  lane :qa do |options|
+    track = :qa
+    compile(track: track)
+  end
+
+  lane :store do |options|
+    track = :store
+    compile(track: track)
+  end
+
+    # error block is executed when a error occurs
+    error do |lane, exception|
+      UI.error(exception.to_s)
+
+      # Notify slack?
+    end
+
+ end

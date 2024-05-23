@@ -1,0 +1,19 @@
+for_platform :ios do
+  apple_id("hello@harris.dev") # Your Apple email address
+
+  itc_team_id("") # App Store Connect Team ID
+  team_id("") # Developer Portal Team ID
+
+  for_lane :dev do
+    app_identifier('com.easupdatesexamplebare.dev')
+  end
+
+  for_lane :qa do
+    app_identifier('com.easupdatesexamplebare.qa')
+  end
+
+  for_lane :release do
+    app_identifier('com.easupdatesexamplebare')
+  end
+end
+
