@@ -1,0 +1,45 @@
+fastlane_require 'dotenv'
+import '../../fastlane/Fastfile'
+
+default_platform(:android)
+
+platform :android do
+  
+  lane :compile do |options|
+    # compile the code
+    track = options[:track]
+
+    if (track.nil?) then
+      UI.user_error!('The track is required. Either dev, qa or release')
+    end
+
+    gradle(task: 'clean')
+
+    gradle(
+      task: 'assemble',
+      flavor: track.to_s,
+      build_type: 'Release',
+    )
+  end
+
+  lane :dev do |options|
+    track = :dev
+    compile(track: track)
+  end
+  
+  lane :qa do |options|
+    track = :qa
+    compile(track: track)
+  end
+
+  lane :store do |options|
+    track = :store
+    compile(track: track)
+  end
+
+
+  # error block is executed when a error occurs
+  error do |lane, exception|
+    UI.error(exception.to_s)
+  end
+end
