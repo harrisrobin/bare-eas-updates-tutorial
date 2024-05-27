@@ -22,18 +22,32 @@ platform :android do
     )
   end
 
+  private_lane :get_and_write_versions do |options|
+    track = options[:track]
+    # get latest version and build numbers
+    get_versions
+    # Set the runtime version in the Expo.plist file
+    write_android_manifest(track: track)
+    # write versions in the version.ts file
+    write_version_ts
+  end
+
+
   lane :dev do |options|
     track = :dev
+    get_and_write_versions(track: track)
     compile(track: track)
   end
   
   lane :qa do |options|
     track = :qa
+    get_and_write_versions(track: track)
     compile(track: track)
   end
 
   lane :store do |options|
     track = :store
+    get_and_write_versions(track: track)
     compile(track: track)
   end
 

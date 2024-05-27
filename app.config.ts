@@ -1,5 +1,7 @@
+import 'ts-node/register';
 import 'dotenv/config';
 import {ExpoConfig, ConfigContext} from 'expo/config';
+import {RUNTIME_VERSION} from './app/utils/version';
 
 const bundleIdentifierForEnvironment = (environment: string) => {
   switch (environment) {
@@ -30,11 +32,11 @@ export default ({config}: ConfigContext): ExpoConfig => {
     android: {
       package: bundleIdentifierForEnvironment(process.env.APP_ENV as string),
     },
-    runtimeVersion: '1.0.0',
+    runtimeVersion: RUNTIME_VERSION,
     updates: {
       url: `https://u.expo.dev/${easProjectId}`,
       requestHeaders: {
-        'expo-channel-name': 'dev',
+        'expo-channel-name': process.env.EXPO_CHANNEL_NAME,
       },
     },
     extra: {
