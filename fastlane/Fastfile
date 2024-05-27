@@ -1,0 +1,173 @@
+require 'plist'
+require 'nokogiri'
+require "httparty"
+require "sem_version"
+
+
+RUNTIME_VERSION = "1.0.0"        # do not change
+
+EXPO_PLIST_FILE = "../ios/Supporting/Expo.plist"
+ANDROID_MANIFEST_FILE = '../android/app/src/main/AndroidManifest.xml'
+VERSION_TS_FILE = "../app/utils/version.ts"
+
+
+lane :write_expo_plist do |options|
+  track = options[:track]
+
+  expo_plist_file = File.expand_path(EXPO_PLIST_FILE, __dir__)
+  UI.message("Writing to file: #{expo_plist_file}")
+
+  plist = Plist.parse_xml(expo_plist_file)
+  plist['EXUpdatesRuntimeVersion'] = RUNTIME_VERSION
+  plist['EXUpdatesRequestHeaders']['expo-channel-name'] = track.to_s  # Correctly target the nested dictionary
+
+  UI.success("Wrote expo plist file with runtime version: #{RUNTIME_VERSION} and expo-channel-name to: #{track}")
+
+  File.write(expo_plist_file, plist.to_plist)
+end
+
+desc 'write_android_manifest'
+lane :write_android_manifest do |options|
+  track = options[:track]
+
+  android_manifest_file = File.expand_path(ANDROID_MANIFEST_FILE, __dir__)
+  UI.message("Writing to file: #{android_manifest_file}")
+
+
+  xml_doc = File.open(android_manifest_file) { |f| Nokogiri::XML(f) }
+
+  updates_config = xml_doc.xpath("//meta-data[@android:name='expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY']").first
+
+  if updates_config
+    # Update the expo-channel-name value
+    current_value = updates_config['android:value']
+    new_value = current_value.gsub(/"expo-channel-name":"[^"]*"/, "\"expo-channel-name\":\"#{track.to_s}\"")
+    updates_config['android:value'] = new_value
+
+    # Write the changes back to the AndroidManifest.xml
+    File.write(android_manifest_file, xml_doc.to_xml)
+    UI.success("Updated expo-channel-name to #{track} in AndroidManifest.xml")
+  else
+    UI.error("Couldn't find the expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY meta-data in AndroidManifest.xml")
+  end
+end
+
+
+lane :write_version_ts do
+  version_ts_file = File.expand_path(VERSION_TS_FILE, __dir__)
+  UI.message("Writing to file: #{version_ts_file}")
+
+       # Define the content of the TypeScript file
+    content = <<~HEREDOC
+      export const RUNTIME_VERSION = "#{RUNTIME_VERSION}"
+    HEREDOC
+ 
+     # Write the content to the file
+     File.open(version_ts_file, "w") { |file| file.write(content) }
+end
+
+lane :get_versions do
+
+  response = HTTParty.get("https://api.github.com/repos/harrisrobin/bare-eas-updates-tutorial",
+                          headers: {
+                            "Accept" => "application/vnd.github.v3+json",
+                            "Authorization" => "token #{ENV["GITHUB_TOKEN"]}",
+                          })
+
+                          
+
+  unless response.code == 200
+    UI.user_error!("Invalid Github token provided.")
+    exit(1)
+  end
+
+  begin
+    description = JSON.parse(response.body)["description"].strip
+
+    description.split(" ").each do |version|
+      version_string = version.gsub(/android@|ios@|next@|runtime@|build/, "")
+
+      version_parts = version_string.split("+")
+      version_number = version_parts[0]
+      build_number = version_parts.length > 1 ? version_parts[1] : nil
+
+      if version.include?("runtime")
+        RUNTIME_VERSION = version_number
+        UI.message("Set Runtime version to #{RUNTIME_VERSION}")
+      end
+    end
+
+    UI.message("Writing version.ts file")
+
+    write_version_ts
+
+  rescue => e
+    UI.error("Error: #{e.message}")
+    UI.error("Backtrace: #{e.backtrace.join("\n")}")
+    UI.user_error!("Could not parse Github response for the version/build numbers.")
+    exit(1)
+  end
+end
+
+
+lane :increment_runtime_version_and_save do |options|
+  segment = options[:segment]
+  track = options[:track]
+
+  v = SemVersion.new(RUNTIME_VERSION)
+  v = SemVersion.new(v.major, v.minor, v.patch, nil)
+
+  if segment == "major"
+    v.major = v.major + 1
+    v.minor = 0
+    v.patch = 0
+  end
+
+  if segment == "minor"
+    v.minor = v.minor + 1
+    v.patch = 0
+  end
+
+  if segment == "patch"
+    v.patch = v.patch + 1
+  end
+
+
+  next_v = SemVersion.new(v.major, v.minor, v.patch, nil)
+
+  RUNTIME_VERSION = next_v.to_s
+
+  new_version_and_build_numbers = [
+    "runtime@#{RUNTIME_VERSION}"
+  ].join(" ")
+
+  UI.message("Runtime version: #{RUNTIME_VERSION}")
+
+  response = HTTParty.post("https://api.github.com/repos/harrisrobin/bare-eas-updates-tutorial",
+                  headers: {
+                    "Accept" => "application/vnd.github.v3+json",
+                    "Authorization" => "token #{ENV["GITHUB_TOKEN"]}",
+                  },
+                  body: {
+                    description: new_version_and_build_numbers,
+                  }.to_json)
+
+  unless response.code == 200
+    UI.user_error!("Could not update runtime version number. HTTP Error #{response.code}: #{response.body}")
+    exit(1)
+  end
+
+  write_version_ts
+  write_expo_plist(track: track)
+  write_android_manifest(track: track)
+end
+
+
+desc 'increment expo runtime version'
+lane :increment_expo_runtime_version do |options|
+  segment = options[:segment]
+  track = options[:track]
+
+  get_versions
+  increment_runtime_version_and_save(segment: segment, track: track)
+end
